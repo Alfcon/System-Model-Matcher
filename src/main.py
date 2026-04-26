@@ -66,32 +66,25 @@ class LLMModelFinderApp:
 
     def _create_screens(self):
         """Create all screen instances."""
-        # Screen 0: Profile
-        profile_screen = ProfileScreen(
-            self.root, self.state,
-            on_next=lambda: self._show_screen(1)
-        )
-        self.screens.append(profile_screen)
-
-        # Screen 1: Hardware
+        # Screen 0: Hardware
         hw_screen = HardwareScreen(
             self.root, self.state,
-            on_next=lambda: self._show_screen(2),
-            on_back=lambda: self._show_screen(0),
+            on_next=lambda: self._show_screen(1),
+            on_back=lambda: self.root.quit(),
             hardware_detector=sys.modules[__name__]
         )
         self.screens.append(hw_screen)
 
-        # Screen 2: Preferences
+        # Screen 1: Preferences
         prefs_screen = PreferencesScreen(
             self.root, self.state,
             on_next=self._on_preferences_complete,
-            on_back=lambda: self._show_screen(1),
+            on_back=lambda: self._show_screen(0),
             dropdowns_data=self.dropdowns_data
         )
         self.screens.append(prefs_screen)
 
-        # Screen 3: Results (placeholder, will be created after search)
+        # Screen 2: Results (placeholder, will be created after search)
         self.results_screen = None
 
     def _show_screen(self, screen_num):
@@ -107,13 +100,13 @@ class LLMModelFinderApp:
 
     def _reset_and_new_search(self):
         """Reset preferences screen for new search."""
-        self.screens[2].generate_btn.config(state=tk.DISABLED)
-        self.screens[2]._hide_progress_bar()
-        self.screens[2]._hide_models_list()
-        self.screens[2].clear_models_list()
-        self.screens[2].app_var.set('')
-        self.screens[2].search_var.set('')
-        self._show_screen(2)  # Return to preferences
+        self.screens[1].generate_btn.config(state=tk.DISABLED)
+        self.screens[1]._hide_progress_bar()
+        self.screens[1]._hide_models_list()
+        self.screens[1].clear_models_list()
+        self.screens[1].app_var.set('')
+        self.screens[1].search_var.set('')
+        self._show_screen(1)  # Return to preferences
 
     def _on_preferences_complete(self):
         """Called when preferences are selected; search for models."""
@@ -129,31 +122,24 @@ class LLMModelFinderApp:
             search_param = self.state["preferences"].get("search_param", "")
 
             # Get the preferences screen to update model list
-            prefs_screen = self.screens[2]
+            prefs_screen = self.screens[1]
 
             # Determine search query
             if search_param:
-                # User provided search parameter - use it
                 search_query = search_param
-                task = "text-generation"  # General LLM task
             else:
-                # No search parameter - search for best general LLM models
                 search_query = "text-generation"
-                task = "text-generation"
+                
+            task = "text-generation"
 
             # Search for GGUF models
             all_models = []
 
-            # Primary search with user query
-            models = search_gguf_models(task=search_query, limit=30)
-            all_models.extend(models)
-
-            # If no search param and few results, also search for popular models
-            if not search_param and len(all_models) < 10:
-                popular_searches = ["mistral", "llama", "neural", "dolphin"]
-                for search_term in popular_searches:
-                    models = search_gguf_models(task=search_term, limit=15)
-                    all_models.extend(models)
+            # Primary search: Top 20 downloaded and Top 20 most likes
+            models_dl = search_gguf_models(task=search_query, limit=20, sort="downloads")
+            models_likes = search_gguf_models(task=search_query, limit=20, sort="likes")
+            all_models.extend(models_dl)
+            all_models.extend(models_likes)
 
             # Remove duplicates by model name
             seen = set()
@@ -195,21 +181,21 @@ class LLMModelFinderApp:
             results_screen = ResultsScreen(
                 self.root, self.state,
                 on_new_search=lambda: self._reset_and_new_search(),
-                on_back=lambda: self._show_screen(2),
+                on_back=lambda: self._show_screen(1),
                 model_data=ranked
             )
             
-            if len(self.screens) > 3:
-                self.screens[3].frame.destroy()
-                self.screens[3] = results_screen
+            if len(self.screens) > 2:
+                self.screens[2].frame.destroy()
+                self.screens[2] = results_screen
             else:
                 self.screens.append(results_screen)
                 
-            self._show_screen(3)
+            self._show_screen(2)
 
         except Exception as e:
             messagebox.showerror("Error", f"Search failed: {str(e)}")
-            prefs_screen = self.screens[2]
+            prefs_screen = self.screens[1]
             prefs_screen.generate_btn.config(state=tk.NORMAL)
             prefs_screen._hide_progress_bar()
             prefs_screen._hide_models_list()

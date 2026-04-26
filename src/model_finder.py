@@ -29,7 +29,7 @@ def estimate_vram_requirement(params_billions, quant="Q4_K_M"):
 
 import re
 
-def search_gguf_models(task="text-generation", limit=50):
+def search_gguf_models(task="text-generation", limit=50, sort="downloads"):
     """
     Search HuggingFace Hub for GGUF models matching a task.
     Returns list of model dicts with metadata.
@@ -39,7 +39,7 @@ def search_gguf_models(task="text-generation", limit=50):
         models = api.list_models(
             search=task,
             filter=["gguf"],
-            sort="downloads",
+            sort=sort,
             direction=-1,
             limit=limit
         )
@@ -138,6 +138,14 @@ def rank_models(models, user_vram_gb, task="text-generation"):
         quant = model.get("quant", "Q4_K_M")
         downloads = model.get("downloads", 0)
         likes = model.get("likes", 0)
+        file_size_gb = model.get("file_size_gb", 5.0)
+
+        # Filters: minimum 5 Billion parameters and min half the VRAM Size
+        if params_b < 5:
+            continue
+            
+        if file_size_gb < (user_vram_gb / 2.0):
+            continue
 
         # Estimate VRAM requirement
         vram_needed = estimate_vram_requirement(params_b, quant)

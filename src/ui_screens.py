@@ -293,7 +293,7 @@ class ResultsScreen(Screen):
         title.pack(pady=10)
 
         # Create treeview for models
-        columns = ("Rank", "Model Name", "Params", "Quant", "File Size", "Est. VRAM", "Est. Speed")
+        columns = ("Rank", "Model Name", "Parameters / Billion", "Quant", "File Size", "Est. VRAM", "Est. Speed")
         self.tree = ttk.Treeview(self.frame, columns=columns, height=12, show='headings')
 
         for col in columns:
@@ -329,7 +329,7 @@ class ResultsScreen(Screen):
 
     def _copy_to_clipboard(self):
         # Extract data from tree and copy
-        text = "Rank\tModel Name\tParams\tQuant\tFile Size\tEst. VRAM\tEst. Speed\n"
+        text = "Rank\tModel Name\tParameters / Billion\tQuant\tFile Size\tEst. VRAM\tEst. Speed\n"
         for item in self.tree.get_children():
             values = self.tree.item(item)['values']
             text += "\t".join(str(v) for v in values) + "\n"
