@@ -124,20 +124,16 @@ class LLMModelFinderApp:
             # Get the preferences screen to update model list
             prefs_screen = self.screens[1]
 
-            # Determine search query
-            if search_param:
-                search_query = search_param
-            else:
-                search_query = "text-generation"
-                
+            # Empty search → no keyword filter, return top downloaded GGUF models
+            search_query = search_param
             task = "text-generation"
 
             # Search for GGUF models
             all_models = []
 
-            # Primary search: Top 20 downloaded and Top 20 most likes
-            models_dl = search_gguf_models(task=search_query, limit=20, sort="downloads")
-            models_likes = search_gguf_models(task=search_query, limit=20, sort="likes")
+            # Primary search: Top 30 downloaded and Top 30 most likes
+            models_dl = search_gguf_models(task=search_query, limit=30, sort="downloads", user_vram_gb=vram_gb)
+            models_likes = search_gguf_models(task=search_query, limit=30, sort="likes", user_vram_gb=vram_gb)
             all_models.extend(models_dl)
             all_models.extend(models_likes)
 

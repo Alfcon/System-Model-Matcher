@@ -35,9 +35,8 @@ def search_gguf_models(task="text-generation", limit=50, sort="downloads", user_
     Returns list of model dicts with metadata.
     """
     try:
-        # Search with filters: GGUF format only (remove "featured" filter as it's too restrictive)
         models = api.list_models(
-            search=task,
+            search=task if task else None,
             filter=["gguf"],
             sort=sort,
             direction=-1,
@@ -144,6 +143,10 @@ def rank_models(models, user_vram_gb, task="text-generation"):
     Rank models by suitability for user's hardware and preferences.
     Scoring: VRAM fit (50%) + param suitability (30%) + quant quality (10%) + popularity (10%)
     """
+    # When no GPU is detected fall back to a conservative estimate so filters don't
+    # discard every model.  8 GB is a safe baseline for CPU-only / iGPU systems.
+    effective_vram = user_vram_gb if user_vram_gb > 0 else 8.0
+
     scored = []
 
     for model in models:
@@ -151,20 +154,15 @@ def rank_models(models, user_vram_gb, task="text-generation"):
         quant = model.get("quant", "Q4_K_M")
         downloads = model.get("downloads", 0)
         likes = model.get("likes", 0)
-        file_size_gb = model.get("file_size_gb", 5.0)
 
-        # Filters: minimum 5 Billion parameters and min half the VRAM Size
         if params_b < 5:
-            continue
-            
-        if file_size_gb < (user_vram_gb / 2.0):
             continue
 
         # Estimate VRAM requirement
         vram_needed = estimate_vram_requirement(params_b, quant)
 
         # 1. VRAM fit score (0 if doesn't fit, 100 if fits)
-        safety_buffer = user_vram_gb * 0.8  # 20% safety margin
+        safety_buffer = effective_vram * 0.8  # 20% safety margin
         if vram_needed > safety_buffer:
             vram_score = 0
         else:
