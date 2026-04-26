@@ -29,7 +29,7 @@ def estimate_vram_requirement(params_billions, quant="Q4_K_M"):
 
 import re
 
-def search_gguf_models(task="text-generation", limit=50, sort="downloads"):
+def search_gguf_models(task="text-generation", limit=50, sort="downloads", user_vram_gb=8.0):
     """
     Search HuggingFace Hub for GGUF models matching a task.
     Returns list of model dicts with metadata.
@@ -48,6 +48,7 @@ def search_gguf_models(task="text-generation", limit=50, sort="downloads"):
         for model in models:
             # Extract model details
             try:
+                params_b = extract_params_from_name(model.id)
                 quant = "Q4_K_M"
                 file_size_gb = 5.0
                 
@@ -57,35 +58,47 @@ def search_gguf_models(task="text-generation", limit=50, sort="downloads"):
                     gguf_files = [f for f in info.siblings if f.rfilename.endswith(".gguf")]
                     
                     if gguf_files:
-                        preferred_file = None
-                        # Try to find a balanced Q4_K_M quant
-                        for f in gguf_files:
-                            if "q4_k_m" in f.rfilename.lower():
-                                preferred_file = f
-                                break
+                        best_file = None
+                        best_quality = -1
                         
-                        if not preferred_file:
-                            preferred_file = gguf_files[0]
-                            
-                        # Determine quant from filename
-                        found_quant = "Unknown"
-                        for q in QUANT_VRAM_MULTIPLIER.keys():
-                            if q.lower() in preferred_file.rfilename.lower():
-                                found_quant = q
-                                break
-                        if found_quant != "Unknown":
-                            quant = found_quant
-                        else:
-                            # Try to guess quant from filename parts
-                            parts = preferred_file.rfilename.lower().split('.')
-                            for part in parts:
-                                if part.startswith('q') and len(part) >= 2:
-                                    quant = part.upper()
+                        # Find the highest quality quant that fits in VRAM
+                        for f in gguf_files:
+                            f_quant = "Unknown"
+                            for q in QUANT_VRAM_MULTIPLIER.keys():
+                                if q.lower() in f.rfilename.lower():
+                                    f_quant = q
                                     break
-                                    
+                            
+                            if f_quant != "Unknown":
+                                vram_needed = estimate_vram_requirement(params_b, f_quant)
+                                # Requires fitting within 80% safety buffer
+                                if vram_needed <= (user_vram_gb * 0.8):
+                                    quality = QUANT_VRAM_MULTIPLIER[f_quant]
+                                    if quality > best_quality:
+                                        best_quality = quality
+                                        best_file = f
+                                        quant = f_quant
+                        
+                        # If no model fits perfectly, fallback to the smallest available
+                        if not best_file:
+                            gguf_files.sort(key=lambda x: getattr(x, 'size', float('inf')))
+                            best_file = gguf_files[0]
+                            for q in QUANT_VRAM_MULTIPLIER.keys():
+                                if q.lower() in best_file.rfilename.lower():
+                                    quant = q
+                                    break
+                            
+                            # Try to guess from filename if not in dict
+                            if quant == "Q4_K_M":  # Still default
+                                parts = best_file.rfilename.lower().split('.')
+                                for part in parts:
+                                    if part.startswith('q') and len(part) >= 2:
+                                        quant = part.upper()
+                                        break
+                                        
                         # Determine file size
-                        if hasattr(preferred_file, 'size') and preferred_file.size:
-                            file_size_gb = round(preferred_file.size / (1024**3), 2)
+                        if hasattr(best_file, 'size') and best_file.size:
+                            file_size_gb = round(best_file.size / (1024**3), 2)
                 except Exception:
                     pass
 
@@ -94,7 +107,7 @@ def search_gguf_models(task="text-generation", limit=50, sort="downloads"):
                     "downloads": model.downloads,
                     "likes": model.likes,
                     "last_modified": str(model.last_modified),
-                    "params_b": extract_params_from_name(model.id),
+                    "params_b": params_b,
                     "quant": quant,
                     "file_size_gb": file_size_gb,
                 }
