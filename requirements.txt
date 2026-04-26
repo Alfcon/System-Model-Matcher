@@ -1,0 +1,6 @@
+psutil==5.9.8
+nvidia-ml-py==12.535.108
+requests==2.31.0
+beautifulsoup4==4.12.2
+huggingface-hub==0.20.3
+lxml>=4.9.0

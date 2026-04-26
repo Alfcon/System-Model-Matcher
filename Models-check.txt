@@ -1,0 +1,58 @@
+Model Fit for Adult Chat (Capability vs Size)
+1. Tone & Persona Control (most important)
+Can the model:
+	Stay in character over long chats
+	Maintain a consistent personality/voice
+	Adjust intensity (playful ↔ explicit) when asked
+
+Requires strong instruction-following + roleplay stability
+
+2. Context Memory (conversation continuity)
+	Remembers details from earlier messages
+	Tracks relationship dynamics, preferences, mood
+	Doesn’t “reset personality” mid-chat
+
+This is where mid–large models (7B–13B) are better over smaller ones
+
+3. Language & Descriptive Ability
+	Rich vocabulary (not repetitive)
+	Natural dialogue flow
+	Ability to vary pacing and wording
+
+4. Responsiveness to Nuance
+Can it:
+	Pick up subtle cues
+	Escalate or de-escalate tone naturally
+	Handle emotional + conversational depth (not just explicit text)
+
+5. Instruction Compliance
+	Follows system prompts reliably
+	Doesn’t randomly refuse or derail
+	Handles custom rules (e.g. boundaries, style limits)
+
+6. Stability (no weird breaks)
+Watch for:
+	sudden tone shifts
+	going out of character
+	nonsensical or looping replies
+
+Capability vs Size (what actually matters)
+Size	Behaviour
+<7B	Fast, but shallow, repetitive
+7B–9B	Best balance for chat/roleplay
+13B+	More depth, slower, heavier
+30B+	Overkill unless you need extreme realism
+
+Instead of generic tests, use:
+“Start a character-driven conversation”
+“Maintain tone over 10+ messages”
+“Adapt to changing emotional context”
+“Avoid repetition over long replies”
+
+Score:
+immersion (1–10)
+consistency (1–10)
+natural flow (1–10)
+Context Memory (1-10)
+
+
