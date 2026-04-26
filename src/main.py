@@ -198,7 +198,13 @@ class LLMModelFinderApp:
                 on_back=lambda: self._show_screen(2),
                 model_data=ranked
             )
-            self.screens.append(results_screen)
+            
+            if len(self.screens) > 3:
+                self.screens[3].frame.destroy()
+                self.screens[3] = results_screen
+            else:
+                self.screens.append(results_screen)
+                
             self._show_screen(3)
 
         except Exception as e:
