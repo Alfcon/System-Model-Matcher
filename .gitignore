@@ -216,3 +216,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+src/__pycache__/hardware_detector.cpython-313.pyc
+src/__pycache__/hf_scraper.cpython-313.pyc
+src/__pycache__/model_finder.cpython-313.pyc
+src/__pycache__/ui_screens.cpython-313.pyc
+src/__pycache__/hardware_detector.cpython-313.pyc
+src/__pycache__/hf_scraper.cpython-313.pyc
+src/__pycache__/model_finder.cpython-313.pyc
+src/__pycache__/ui_screens.cpython-313.pyc
+src/__pycache__/hardware_detector.cpython-313.pyc
+src/__pycache__/hf_scraper.cpython-313.pyc
+src/__pycache__/model_finder.cpython-313.pyc
+src/__pycache__/ui_screens.cpython-313.pyc

@@ -129,6 +129,8 @@ class HardwareScreen(Screen):
         gpu_frame.pack(fill=tk.X, padx=10, pady=5)
         tk.Label(gpu_frame, text=f"Model: {hw['gpu']['model']}").pack(anchor=tk.W)
         tk.Label(gpu_frame, text=f"VRAM: {hw['gpu']['vram_gb']} GB").pack(anchor=tk.W)
+        if 'vram_free_gb' in hw['gpu'] and hw['gpu']['vram_free_gb'] > 0:
+            tk.Label(gpu_frame, text=f"Free VRAM: {hw['gpu']['vram_free_gb']} GB").pack(anchor=tk.W)
 
         self.status_label.config(text="✓ Hardware detection complete")
 
@@ -304,7 +306,7 @@ class ResultsScreen(Screen):
         for idx, model in enumerate(self.model_data[:10], 1):
             self.tree.insert('', 'end', values=(
                 idx,
-                model.get('model_name', 'Unknown')[:30],  # Truncate long names
+                model.get('model_name', 'Unknown'),  # Do not truncate names
                 model.get('params_b', '?'),
                 model.get('quant', '?'),
                 f"{model.get('file_size_gb', '?')} GB",

@@ -27,6 +27,8 @@ def estimate_vram_requirement(params_billions, quant="Q4_K_M"):
     return round(params_billions * multiplier, 2)
 
 
+import re
+
 def search_gguf_models(task="text-generation", limit=50):
     """
     Search HuggingFace Hub for GGUF models matching a task.
@@ -46,14 +48,55 @@ def search_gguf_models(task="text-generation", limit=50):
         for model in models:
             # Extract model details
             try:
+                quant = "Q4_K_M"
+                file_size_gb = 5.0
+                
+                # Fetch actual file metadata to get real size and quant
+                try:
+                    info = api.model_info(model.id, files_metadata=True)
+                    gguf_files = [f for f in info.siblings if f.rfilename.endswith(".gguf")]
+                    
+                    if gguf_files:
+                        preferred_file = None
+                        # Try to find a balanced Q4_K_M quant
+                        for f in gguf_files:
+                            if "q4_k_m" in f.rfilename.lower():
+                                preferred_file = f
+                                break
+                        
+                        if not preferred_file:
+                            preferred_file = gguf_files[0]
+                            
+                        # Determine quant from filename
+                        found_quant = "Unknown"
+                        for q in QUANT_VRAM_MULTIPLIER.keys():
+                            if q.lower() in preferred_file.rfilename.lower():
+                                found_quant = q
+                                break
+                        if found_quant != "Unknown":
+                            quant = found_quant
+                        else:
+                            # Try to guess quant from filename parts
+                            parts = preferred_file.rfilename.lower().split('.')
+                            for part in parts:
+                                if part.startswith('q') and len(part) >= 2:
+                                    quant = part.upper()
+                                    break
+                                    
+                        # Determine file size
+                        if hasattr(preferred_file, 'size') and preferred_file.size:
+                            file_size_gb = round(preferred_file.size / (1024**3), 2)
+                except Exception:
+                    pass
+
                 model_info = {
                     "model_name": model.id,
                     "downloads": model.downloads,
                     "likes": model.likes,
                     "last_modified": str(model.last_modified),
                     "params_b": extract_params_from_name(model.id),
-                    "quant": "Q4_K_M",  # Default, would need to scrape actual quant from model repo
-                    "file_size_gb": 5.0,  # Placeholder, would fetch from model files
+                    "quant": quant,
+                    "file_size_gb": file_size_gb,
                 }
                 result.append(model_info)
             except Exception:
@@ -68,6 +111,15 @@ def search_gguf_models(task="text-generation", limit=50):
 def extract_params_from_name(model_name):
     """Extract parameter count from model name (e.g., 'mistral-7b' -> 7)."""
     name_lower = model_name.lower()
+    
+    # Use regex to find parameter sizes like 7b, 13b, 8.03b, 0.5b
+    match = re.search(r'([0-9.]+)(?:b|x)', name_lower)
+    if match:
+        try:
+            return float(match.group(1))
+        except ValueError:
+            pass
+
     for size in ["70", "65", "34", "32", "30", "13", "12", "11", "10", "9", "8", "7", "6", "5", "4", "3", "2", "1"]:
         if f"{size}b" in name_lower:
             return int(size)

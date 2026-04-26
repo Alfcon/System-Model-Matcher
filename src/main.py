@@ -166,7 +166,7 @@ class LLMModelFinderApp:
 
             # Display found models
             for model in unique_models[:40]:
-                model_name = model.get('model_name', 'Unknown')[:50]
+                model_name = model.get('model_name', 'Unknown')
                 prefs_screen.add_model_to_list(model_name)
 
             if not unique_models:

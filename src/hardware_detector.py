@@ -115,7 +115,7 @@ def detect_gpu():
             return gpu_info
 
     # No GPU found
-    return {"model": "No GPU detected", "vram_gb": 0.0}
+    return {"model": "No GPU detected", "vram_gb": 0.0, "vram_free_gb": 0.0}
 
 
 def _detect_gpu_nvidia_smi_library():
@@ -125,14 +125,15 @@ def _detect_gpu_nvidia_smi_library():
         nvidia_smi.nvmlInit()
         device_count = nvidia_smi.nvmlDeviceGetCount()
         if device_count == 0:
-            return {"model": "No GPU detected", "vram_gb": 0.0}
+            return {"model": "No GPU detected", "vram_gb": 0.0, "vram_free_gb": 0.0}
 
         handle = nvidia_smi.nvmlDeviceGetHandleByIndex(0)
         gpu_name = nvidia_smi.nvmlDeviceGetName(handle).decode('utf-8')
         mem_info = nvidia_smi.nvmlDeviceGetMemoryInfo(handle)
         vram_gb = mem_info.total / (1024 ** 3)
+        vram_free_gb = mem_info.free / (1024 ** 3)
         nvidia_smi.nvmlShutdown()
-        return {"model": gpu_name, "vram_gb": round(vram_gb, 2)}
+        return {"model": gpu_name, "vram_gb": round(vram_gb, 2), "vram_free_gb": round(vram_free_gb, 2)}
     except Exception:
         return None
 
@@ -141,7 +142,7 @@ def _detect_gpu_nvidia_smi_command():
     """Detect GPU by running nvidia-smi command."""
     try:
         result = subprocess.run(
-            ['nvidia-smi', '--query-gpu=name,memory.total', '--format=csv,noheader'],
+            ['nvidia-smi', '--query-gpu=name,memory.total,memory.free', '--format=csv,noheader'],
             capture_output=True, text=True, timeout=5
         )
         if result.returncode == 0:
@@ -150,9 +151,14 @@ def _detect_gpu_nvidia_smi_command():
                 parts = lines[0].split(',')
                 gpu_name = parts[0].strip()
                 vram_str = parts[1].strip() if len(parts) > 1 else "0"
+                vram_free_str = parts[2].strip() if len(parts) > 2 else "0"
+                
                 # Parse VRAM (e.g., "12297 MiB" -> 12.29 GB)
                 vram_mib = float(vram_str.split()[0])
                 vram_gb = vram_mib / 1024
+                
+                vram_free_mib = float(vram_free_str.split()[0])
+                vram_free_gb = vram_free_mib / 1024
 
                 # Try to enhance with lspci details on Linux
                 system = platform.system()
@@ -161,7 +167,7 @@ def _detect_gpu_nvidia_smi_command():
                     if lspci_details:
                         gpu_name = lspci_details
 
-                return {"model": gpu_name, "vram_gb": round(vram_gb, 2)}
+                return {"model": gpu_name, "vram_gb": round(vram_gb, 2), "vram_free_gb": round(vram_free_gb, 2)}
     except Exception:
         pass
     return None
