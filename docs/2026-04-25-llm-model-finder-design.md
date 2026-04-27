@@ -182,10 +182,10 @@ A desktop GUI application that helps users find and download GGUF-format LLM mod
 - Use `psutil.virtual_memory().available` for available RAM
 
 **GPU Detection:**
-- Prefer `nvidia-ml-py` for NVIDIA GPUs (standard, reliable)
-- Fallback: `GPUtil` library if nvidia-ml-py unavailable
-- For AMD/Intel GPUs: attempt detection via `rocm-smi` (Linux) or skip with warning
-- Handle case where no GPU is present (show "No GPU detected", set VRAM to 0)
+- **NVIDIA:** Use `nvidia-ml-py` for reliable VRAM and model detection.
+- **AMD (Linux):** Use `rocm-smi` command-line tool to get VRAM and model name. Fallback to `lspci` for model name if `rocm-smi` is not available.
+- **AMD (Windows):** Use `WMI` to query for video controller details to get VRAM and model name.
+- **Fallback:** If no specific GPU is detected, or detection fails, proceed with CPU-only mode (show "No GPU detected", set VRAM to 0 for ranking purposes, which then defaults to an 8GB effective VRAM assumption in `model_finder`).
 
 ---
 

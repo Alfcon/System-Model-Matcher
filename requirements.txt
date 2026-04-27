@@ -4,3 +4,4 @@ requests==2.31.0
 beautifulsoup4==4.12.2
 huggingface-hub==0.20.3
 lxml>=4.9.0
+WMI>=1.5.1; sys_platform == 'win32'

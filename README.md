@@ -48,8 +48,7 @@ Follow these steps to set up the project using Miniconda.
 3. **Results** — top 10 ranked models displayed in a sortable table
 
 ## Features
-
-- **Hardware Detection**: Detects CPU model/cores, total/available RAM, and GPU VRAM using `nvidia-ml-py`, `nvidia-smi`, or `lspci` (Linux fallback); falls back to 8 GB effective VRAM on CPU-only systems
+- **Hardware Detection**: Detects CPU model/cores, total/available RAM, and GPU (VRAM) for both NVIDIA and AMD cards. It uses `nvidia-ml-py` for NVIDIA, and `rocm-smi` (Linux) or WMI (Windows) for AMD. Falls back to 8 GB effective VRAM on CPU-only or undetected GPU systems.
 - **Smart Model Search**: Queries Hugging Face Hub for GGUF models sorted by downloads and likes (top 30 each), deduplicates, and evaluates up to 60 candidates
 - **Quantization-Aware Filtering**: Selects the highest-quality quant that fits within 80% of your VRAM; falls back to the smallest available file if none fit
 - **Hardware-Aware Ranking**: Scores each model on four weighted criteria:
@@ -75,4 +74,4 @@ Q2_K, Q3_K_S, Q3_K_M, Q3_K_L, Q4_0, Q4_K_S, Q4_K_M, Q5_K_S, Q5_K_M, Q6_K, Q8_0
 
 - Python 3.8+
 - Internet connection (for Hugging Face Hub search)
-- NVIDIA GPU recommended; CPU-only systems are supported with a conservative VRAM estimate
+- NVIDIA or AMD GPU recommended; CPU-only systems are supported with a conservative VRAM estimate

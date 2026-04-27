@@ -1,216 +1,128 @@
-import psutil
+# src/hardware_detector.py
 import platform
-import os
+import psutil
 import subprocess
+import os
+import re
 
+SYSTEM = platform.system()
 
 def detect_cpu():
     """Detect CPU model and core count."""
     try:
-        cores = psutil.cpu_count(logical=False) or psutil.cpu_count(logical=True) or 1
-        model = _get_cpu_model()
-
-        # Format: "Model × Cores"
-        formatted_model = f"{model} × {cores}"
-        return {"model": formatted_model, "cores": cores}
-    except Exception as e:
-        return {"model": f"Unknown × {cores}", "cores": cores}
-
-
-def _get_cpu_model():
-    """Get detailed CPU model name based on OS."""
-    system = platform.system()
-
-    try:
-        if system == "Linux":
-            return _get_cpu_model_linux()
-        elif system == "Windows":
-            return _get_cpu_model_windows()
-        elif system == "Darwin":
-            return _get_cpu_model_macos()
-        else:
-            return platform.processor() or "Unknown"
+        model = platform.processor()
+        cores = psutil.cpu_count(logical=False)
+        return {"model": model if model else "Unknown", "cores": cores if cores else 0}
     except Exception:
-        return platform.processor() or "Unknown"
-
-
-def _get_cpu_model_linux():
-    """Extract CPU model from /proc/cpuinfo on Linux."""
-    try:
-        with open('/proc/cpuinfo', 'r') as f:
-            for line in f:
-                if line.startswith('model name'):
-                    return line.split(':', 1)[1].strip()
-    except Exception:
-        pass
-    return platform.processor() or "Unknown"
-
-
-def _get_cpu_model_windows():
-    """Extract CPU model from Windows registry or WMI."""
-    try:
-        # Try using wmi module if available
-        try:
-            import wmi
-            c = wmi.WMI()
-            for processor in c.Win32_Processor():
-                return processor.Name.strip()
-        except ImportError:
-            pass
-
-        # Fallback: try registry
-        try:
-            import winreg
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"Hardware\Description\System\CentralProcessor\0") as key:
-                return winreg.QueryValueEx(key, "ProcessorNameString")[0].strip()
-        except Exception:
-            pass
-    except Exception:
-        pass
-
-    return platform.processor() or "Unknown"
-
-
-def _get_cpu_model_macos():
-    """Extract CPU model from macOS using sysctl."""
-    try:
-        result = subprocess.run(['sysctl', '-n', 'machdep.cpu.brand_string'],
-                              capture_output=True, text=True, timeout=2)
-        if result.returncode == 0:
-            return result.stdout.strip()
-    except Exception:
-        pass
-
-    return platform.processor() or "Unknown"
-
+        return {"model": "Unknown", "cores": 0}
 
 def detect_ram():
-    """Detect total and available RAM in GB."""
+    """Detect total and available system RAM."""
     try:
-        vm = psutil.virtual_memory()
-        total_gb = vm.total / (1024 ** 3)
-        available_gb = vm.available / (1024 ** 3)
-        return {"total_gb": round(total_gb, 2), "available_gb": round(available_gb, 2)}
-    except Exception as e:
-        return {"total_gb": 0.0, "available_gb": 0.0, "error": str(e)}
+        mem = psutil.virtual_memory()
+        return {
+            "total_gb": round(mem.total / (1024**3), 2),
+            "available_gb": round(mem.available / (1024**3), 2)
+        }
+    except Exception:
+        return {"total_gb": 0, "available_gb": 0}
 
+def _detect_nvidia_gpu():
+    """Detect NVIDIA GPU using nvidia-ml-py library."""
+    try:
+        from pynvml import nvmlInit, nvmlDeviceGetCount, nvmlDeviceGetHandleByIndex, nvmlDeviceGetName, nvmlDeviceGetMemoryInfo, NVMLError
+        nvmlInit()
+        if nvmlDeviceGetCount() > 0:
+            handle = nvmlDeviceGetHandleByIndex(0)
+            info = nvmlDeviceGetMemoryInfo(handle)
+            name = nvmlDeviceGetName(handle)
+            if isinstance(name, bytes):
+                name = name.decode('utf-8')
+            return {
+                "model": name,
+                "vram_gb": round(info.total / (1024**3), 2),
+                "vram_free_gb": round(info.free / (1024**3), 2)
+            }
+    except (ImportError, NVMLError):
+        pass # Library not installed or NVIDIA driver issue
+    raise Exception("No NVIDIA GPU found")
+
+def _detect_amd_gpu_windows():
+    """Detect AMD GPU on Windows using WMI."""
+    try:
+        import wmi
+        c = wmi.WMI()
+        # Look for video controllers from AMD
+        gpus = c.Win32_VideoController(AdapterCompatibility="Advanced Micro Devices, Inc.")
+        if gpus:
+            gpu = gpus[0]
+            vram_bytes = getattr(gpu, 'AdapterRAM', 0)
+            # WMI may return a signed 32-bit integer for VRAM > 2GB, so handle it.
+            if vram_bytes < 0:
+                vram_bytes += 2**32
+            return {
+                "model": getattr(gpu, 'Name', 'AMD GPU'),
+                "vram_gb": round(vram_bytes / (1024**3), 2),
+                "vram_free_gb": 0.0  # WMI doesn't provide free VRAM easily
+            }
+    except ImportError:
+        pass # WMI not installed
+    raise Exception("No AMD GPU found on Windows")
+
+def _detect_amd_gpu_linux():
+    """Detect AMD GPU on Linux using rocm-smi or lspci."""
+    try:
+        # Prefer rocm-smi for detailed info
+        result = subprocess.run(['rocm-smi', '--showproductname', '--showmeminfo', 'vram'], capture_output=True, text=True, check=True, timeout=5)
+        output = result.stdout
+        
+        name_match = re.search(r'Card series:\s*(.+)', output)
+        name = name_match.group(1).strip() if name_match else "AMD GPU"
+
+        vram_total_match = re.search(r'VRAM Total Memory \(B\):\s*(\d+)', output)
+        vram_used_match = re.search(r'VRAM Used Memory \(B\):\s*(\d+)', output)
+
+        if vram_total_match and vram_used_match:
+            total_vram_bytes = int(vram_total_match.group(1))
+            used_vram_bytes = int(vram_used_match.group(1))
+            free_vram_bytes = total_vram_bytes - used_vram_bytes
+            return {
+                "model": name,
+                "vram_gb": round(total_vram_bytes / (1024**3), 2),
+                "vram_free_gb": round(free_vram_bytes / (1024**3), 2)
+            }
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        # Fallback to lspci if rocm-smi fails or is not installed
+        try:
+            result = subprocess.run(['lspci'], capture_output=True, text=True, check=True, timeout=5)
+            for line in result.stdout.splitlines():
+                if "VGA compatible controller" in line and "Advanced Micro Devices" in line:
+                    model_match = re.search(r'\[(.*?)\]', line)
+                    model = f"AMD {model_match.group(1)}" if model_match else "AMD GPU (Unknown VRAM)"
+                    # lspci does not provide VRAM info, so we return 0 and let the app use a fallback.
+                    return {"model": model, "vram_gb": 0.0, "vram_free_gb": 0.0}
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            pass # lspci not found or failed
+
+    raise Exception("No AMD GPU found on Linux")
 
 def detect_gpu():
-    """Detect GPU model and VRAM in GB. Returns 'No GPU' if not found."""
-    # Try nvidia-ml-py first
-    gpu_info = _detect_gpu_nvidia_smi_library()
-    if gpu_info and gpu_info["model"] != "No GPU detected":
-        return gpu_info
-
-    # Fallback: try nvidia-smi command
-    gpu_info = _detect_gpu_nvidia_smi_command()
-    if gpu_info and gpu_info["model"] != "No GPU detected":
-        return gpu_info
-
-    # Fallback: try lspci on Linux
-    system = platform.system()
-    if system == "Linux":
-        gpu_info = _detect_gpu_lspci()
-        if gpu_info and gpu_info["model"] != "No GPU detected":
-            return gpu_info
-
-    # No GPU found
-    return {"model": "No GPU detected", "vram_gb": 0.0, "vram_free_gb": 0.0}
-
-
-def _detect_gpu_nvidia_smi_library():
-    """Detect GPU using nvidia-ml-py library."""
+    """Detect GPU model and VRAM, trying NVIDIA first, then AMD."""
     try:
-        import nvidia_ml_py as nvidia_smi
-        nvidia_smi.nvmlInit()
-        device_count = nvidia_smi.nvmlDeviceGetCount()
-        if device_count == 0:
-            return {"model": "No GPU detected", "vram_gb": 0.0, "vram_free_gb": 0.0}
-
-        handle = nvidia_smi.nvmlDeviceGetHandleByIndex(0)
-        gpu_name = nvidia_smi.nvmlDeviceGetName(handle).decode('utf-8')
-        mem_info = nvidia_smi.nvmlDeviceGetMemoryInfo(handle)
-        vram_gb = mem_info.total / (1024 ** 3)
-        vram_free_gb = mem_info.free / (1024 ** 3)
-        nvidia_smi.nvmlShutdown()
-        return {"model": gpu_name, "vram_gb": round(vram_gb, 2), "vram_free_gb": round(vram_free_gb, 2)}
+        return _detect_nvidia_gpu()
     except Exception:
-        return None
-
-
-def _detect_gpu_nvidia_smi_command():
-    """Detect GPU by running nvidia-smi command."""
-    try:
-        result = subprocess.run(
-            ['nvidia-smi', '--query-gpu=name,memory.total,memory.free', '--format=csv,noheader'],
-            capture_output=True, text=True, timeout=5
-        )
-        if result.returncode == 0:
-            lines = result.stdout.strip().split('\n')
-            if lines:
-                parts = lines[0].split(',')
-                gpu_name = parts[0].strip()
-                vram_str = parts[1].strip() if len(parts) > 1 else "0"
-                vram_free_str = parts[2].strip() if len(parts) > 2 else "0"
-                
-                # Parse VRAM (e.g., "12297 MiB" -> 12.29 GB)
-                vram_mib = float(vram_str.split()[0])
-                vram_gb = vram_mib / 1024
-                
-                vram_free_mib = float(vram_free_str.split()[0])
-                vram_free_gb = vram_free_mib / 1024
-
-                # Try to enhance with lspci details on Linux
-                system = platform.system()
-                if system == "Linux":
-                    lspci_details = _get_lspci_gpu_details()
-                    if lspci_details:
-                        gpu_name = lspci_details
-
-                return {"model": gpu_name, "vram_gb": round(vram_gb, 2), "vram_free_gb": round(vram_free_gb, 2)}
-    except Exception:
-        pass
-    return None
-
-
-def _get_lspci_gpu_details():
-    """Get detailed GPU info from lspci."""
-    try:
-        result = subprocess.run(['lspci'], capture_output=True, text=True, timeout=5)
-        if result.returncode == 0:
-            for line in result.stdout.split('\n'):
-                # Look for NVIDIA GPU entries
-                if 'NVIDIA' in line and ('VGA' in line or '3D' in line):
-                    # Format: "01:00.0 VGA compatible controller: NVIDIA Corporation AD107M [GeForce RTX 4060 Max-Q / Mobile]"
-                    if 'NVIDIA Corporation' in line:
-                        # Extract everything after "NVIDIA Corporation"
-                        parts = line.split('NVIDIA Corporation', 1)
-                        if len(parts) > 1:
-                            return ('NVIDIA ' + parts[1].strip()).replace('[', '').replace(']', '')
-    except Exception:
-        pass
-    return None
-
-
-def _detect_gpu_lspci():
-    """Detect GPU using lspci on Linux."""
-    try:
-        result = subprocess.run(['lspci'], capture_output=True, text=True, timeout=5)
-        if result.returncode == 0:
-            for line in result.stdout.split('\n'):
-                if 'NVIDIA' in line or 'nvidia' in line or 'GeForce' in line or 'RTX' in line:
-                    # Extract GPU name from lspci output
-                    # Format: "01:00.0 VGA compatible controller: NVIDIA Corporation AD107M [GeForce RTX 4060 Max-Q / Mobile]"
-                    if ':' in line:
-                        gpu_info = line.split(':', 2)[-1].strip()
-                        return {"model": gpu_info, "vram_gb": 0.0}  # Can't get VRAM from lspci
-    except Exception:
-        pass
-    return None
-
+        try:
+            if SYSTEM == "Windows":
+                return _detect_amd_gpu_windows()
+            elif SYSTEM == "Linux":
+                return _detect_amd_gpu_linux()
+        except Exception:
+            pass  # Fall through to default
+    
+    return {"model": "No compatible GPU detected", "vram_gb": 0.0, "vram_free_gb": 0.0}
 
 def detect_all():
-    """Detect all hardware and return combined dict."""
+    """Detect all hardware components and return a dictionary."""
     return {
         "cpu": detect_cpu(),
         "ram": detect_ram(),
