@@ -12,7 +12,7 @@ Follow these steps to set up the project using Miniconda.
 
 3.  **Clone the Repository**: Navigate to where you want to store the project and run the following commands:
     ```bash
-    git clone https://github.com/your-username/System-Model-Matcher.git
+    git clone https://github.com/Alfcon-Industries/System-Model-Matcher.git
     cd System-Model-Matcher
     ```
 
