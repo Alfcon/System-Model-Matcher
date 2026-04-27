@@ -4,15 +4,42 @@ A desktop application that detects your system hardware and finds the best GGUF-
 
 ## Installation
 
-```bash
-pip install -r requirements.txt
-```
+Follow these steps to set up the project using Miniconda.
+
+1.  **Install Miniconda**: If you don't already have it, download and install [Miniconda](https://docs.conda.io/en/latest/miniconda.html).
+
+2.  **Open Anaconda Prompt**: Launch the Anaconda Prompt.
+
+3.  **Clone the Repository**: Navigate to where you want to store the project and run the following commands:
+    ```bash
+    git clone https://github.com/your-username/System-Model-Matcher.git
+    cd System-Model-Matcher
+    ```
+
+4.  **Create and Activate Conda Environment**: This creates an isolated environment for the project's dependencies.
+    ```bash
+    conda create -n llm_finder python=3.9 -y
+    conda activate llm_finder
+    ```
+
+5.  **Install Requirements**: Install the necessary Python packages from `requirements.txt`.
+    ```bash
+    pip install -r requirements.txt
+    ```
 
 ## Usage
 
-```bash
-python src/main.py
-```
+1.  **Open Anaconda Prompt**: Launch the Anaconda Prompt.
+
+2.  **Activate the Conda Environment**:
+    ```bash
+    conda activate llm_finder
+    ```
+
+3.  **Run the Application**:
+    ```bash
+    python src/main.py
+    ```
 
 ## App Flow
 
