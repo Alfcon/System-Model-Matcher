@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hardware_detector import detect_all
 from hf_scraper import get_tasks, get_apps, get_themes
 from model_finder import search_gguf_models, rank_models
-from ui_screens import ProfileScreen, HardwareScreen, PreferencesScreen, ResultsScreen
+from ui_screens import HardwareScreen, PreferencesScreen, ResultsScreen
 
 class LLMModelFinderApp:
     def __init__(self, root):

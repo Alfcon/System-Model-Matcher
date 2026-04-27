@@ -16,51 +16,6 @@ class Screen:
     def hide(self):
         self.frame.pack_forget()
 
-class ProfileScreen(Screen):
-    """Screen 1: User profile (name, location)."""
-    def __init__(self, parent, session_state, on_next):
-        super().__init__(parent, session_state)
-        self.on_next = on_next
-        self._build_ui()
-
-    def _build_ui(self):
-        title = tk.Label(self.frame, text="Welcome to LLM Model Finder", font=("Arial", 16, "bold"))
-        title.pack(pady=20)
-
-        # Name
-        name_label = tk.Label(self.frame, text="Your Name (required):", font=("Arial", 10))
-        name_label.pack(pady=5)
-        self.name_entry = tk.Entry(self.frame, width=30)
-        self.name_entry.pack(pady=5)
-
-        # Location
-        location_label = tk.Label(self.frame, text="Location (optional):", font=("Arial", 10))
-        location_label.pack(pady=5)
-        self.location_entry = tk.Entry(self.frame, width=30)
-        self.location_entry.pack(pady=5)
-
-        # Buttons
-        button_frame = tk.Frame(self.frame)
-        button_frame.pack(pady=20)
-
-        next_btn = tk.Button(button_frame, text="Next", command=self._on_next)
-        next_btn.pack(side=tk.LEFT, padx=10)
-
-        quit_btn = tk.Button(button_frame, text="Quit", command=self.parent.quit)
-        quit_btn.pack(side=tk.LEFT, padx=10)
-
-    def _on_next(self):
-        name = self.name_entry.get().strip()
-        location = self.location_entry.get().strip()
-
-        if not name:
-            messagebox.showwarning("Validation", "Please enter your name.")
-            return
-
-        self.session_state["name"] = name
-        self.session_state["location"] = location
-        self.on_next()
-
 class HardwareScreen(Screen):
     """Screen 2: Display detected hardware."""
     def __init__(self, parent, session_state, on_next, on_back, hardware_detector):
@@ -72,6 +27,9 @@ class HardwareScreen(Screen):
         self.detection_complete = False
 
     def _build_ui(self):
+        title = tk.Label(self.frame, text="Welcome to LLM Model Finder", font=("Arial", 20, "bold"))
+        title.pack(pady=20)
+
         title = tk.Label(self.frame, text="System Hardware Detection", font=("Arial", 14, "bold"))
         title.pack(pady=20)
 
