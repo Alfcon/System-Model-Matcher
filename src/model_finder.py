@@ -83,7 +83,7 @@ def _build_model_info(model, user_vram_gb):
                 f_size_gb = round(getattr(f, "size", 0) / (1024 ** 3), 2) if getattr(f, "size", None) else 0
                 f_vram_needed = estimate_vram_requirement(params_b, f_quant)
 
-                if f_vram_needed <= _effective_vram_limit(user_vram_gb):
+                if _file_fits_vram(f_size_gb, f_vram_needed, user_vram_gb):
                     fit_files.append((f_quant, f_vram_needed, f_size_gb, f))
 
             if fit_files:
@@ -102,7 +102,7 @@ def _build_model_info(model, user_vram_gb):
     except Exception:
         return None
 
-    if vram_needed > _effective_vram_limit(user_vram_gb):
+    if not _file_fits_vram(file_size_gb, vram_needed, user_vram_gb):
         return None
 
     return {
@@ -131,7 +131,11 @@ def _effective_vram_limit(user_vram_gb):
 
 def _file_fits_vram(file_size_gb, vram_needed_gb, user_vram_gb):
     effective_limit = _effective_vram_limit(user_vram_gb)
-    return vram_needed_gb <= effective_limit
+    if vram_needed_gb > effective_limit:
+        return False
+    if file_size_gb > effective_limit:
+        return False
+    return True
 
 
 def extract_params_from_name(model_name):
