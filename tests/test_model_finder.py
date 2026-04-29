@@ -18,8 +18,19 @@ class TestModelFinder(unittest.TestCase):
         ranked = rank_models(sample_models, user_vram_gb)
 
         assert isinstance(ranked, list)
-        # Models that fit should be ranked higher
-        # 7B and 13B models should rank above 70B for 8GB GPU
+        assert all(model["vram_needed"] <= user_vram_gb * 0.8 for model in ranked)
+        assert all(model["vram_score"] > 0 for model in ranked)
+
+    def test_rank_models_filters_oversized_models(self):
+        sample_models = [
+            {"model_name": "too-big", "params_b": 70, "quant": "Q8_0", "downloads": 1000, "likes": 100},
+            {"model_name": "fits", "params_b": 7, "quant": "Q4_K_M", "downloads": 2000, "likes": 200},
+        ]
+        ranked = rank_models(sample_models, 8)
+
+        assert len(ranked) == 1
+        assert ranked[0]["model_name"] == "fits"
+        assert ranked[0]["vram_needed"] <= 6.4
 
     def test_estimate_vram_requirement(self):
         # 7B model with Q4 quantization should need ~4GB

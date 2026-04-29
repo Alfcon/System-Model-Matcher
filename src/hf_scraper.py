@@ -18,6 +18,7 @@ DEFAULT_APPS = [
     "Ollama",
     "LM Studio",
     "GPT4All",
+    "Llama.cpp app",
     "Custom"
 ]
 

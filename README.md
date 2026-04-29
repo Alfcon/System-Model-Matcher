@@ -68,6 +68,7 @@ Q2_K, Q3_K_S, Q3_K_M, Q3_K_L, Q4_0, Q4_K_S, Q4_K_M, Q5_K_S, Q5_K_M, Q6_K, Q8_0
 - Ollama
 - LM Studio
 - GPT4All
+- Llama.cpp app
 - Custom
 
 ## Requirements

@@ -118,8 +118,10 @@ class LLMModelFinderApp:
     def _search_and_rank_models(self):
         """Search HuggingFace for GGUF models based on user parameter or best general models."""
         try:
-            vram_gb = self.state["hardware"]["gpu"]["vram_gb"]
+            gpu_info = self.state["hardware"]["gpu"]
+            vram_gb = gpu_info["vram_gb"]
             search_param = self.state["preferences"].get("search_param", "")
+            selected_app = self.state["preferences"].get("app", "")
 
             # Get the preferences screen to update model list
             prefs_screen = self.screens[1]
@@ -141,15 +143,10 @@ class LLMModelFinderApp:
             seen = set()
             unique_models = []
             for model in all_models:
-                name = model.get('model_name', '')
+                name = model.get("model_name", "")
                 if name not in seen:
                     seen.add(name)
                     unique_models.append(model)
-
-            # Display found models
-            for model in unique_models[:40]:
-                model_name = model.get('model_name', 'Unknown')
-                prefs_screen.add_model_to_list(model_name)
 
             if not unique_models:
                 messagebox.showwarning("No Results", "No models found. Try a different search parameter.")
@@ -159,7 +156,12 @@ class LLMModelFinderApp:
                 return
 
             # Rank models by suitability for user's hardware
-            ranked = rank_models(unique_models, vram_gb, task=task)
+            ranked = rank_models(unique_models, vram_gb, task=task, app_name=selected_app)
+
+            # Display only models that fit the GPU VRAM budget
+            for model in ranked:
+                model_name = model.get("model_name", "Unknown")
+                prefs_screen.add_model_to_list(model_name)
 
             # Add estimated speed
             for model in ranked:

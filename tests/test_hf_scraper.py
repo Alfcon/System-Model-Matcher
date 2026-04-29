@@ -19,6 +19,7 @@ class TestHFScraper(unittest.TestCase):
         assert isinstance(result, list)
         assert len(result) > 0
         assert "Ollama" in result or "ollama" in result
+        assert "Llama.cpp app" in result
 
     def test_get_themes_returns_list(self):
         result = get_themes()
