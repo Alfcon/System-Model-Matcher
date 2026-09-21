@@ -166,22 +166,28 @@ def list_gguf_files(model_id):
             continue
         key = _SPLIT_SUFFIX.sub("", path)
         size = item.get("size") or (item.get("lfs") or {}).get("size") or 0
-        entry = grouped.setdefault(key, {"quant": quant, "file_name": key, "single": 0, "split": 0, "parts": 0})
+        entry = grouped.setdefault(key, {"quant": quant, "file_name": key, "single": 0, "split": 0, "parts": 0,
+                                         "first_shard": None})
         if key == path:
             entry["single"] = size
         else:
             entry["split"] += size
             entry["parts"] += 1
+            if entry["first_shard"] is None or path < entry["first_shard"]:
+                entry["first_shard"] = path
 
     files = []
     for entry in grouped.values():
         # Some repos ship the same quant both whole and split; count it once.
         single, split = entry.pop("single"), entry.pop("split")
+        first_shard = entry.pop("first_shard")
         size_bytes = single or split
         if size_bytes <= 0:
             continue
         if single:
             entry["parts"] = 1
+        # Path of the file to load: the whole file, or the first shard of a split set.
+        entry["file_path"] = entry["file_name"] if single else first_shard
         entry["size_bytes"] = size_bytes
         entry["size_gb"] = size_bytes / (1024**3)
         files.append(entry)

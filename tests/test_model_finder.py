@@ -97,6 +97,8 @@ class TestModelFinder(unittest.TestCase):
         assert set(files) == {"Q4_K_M", "BF16", "Q8_0"}
         assert files["Q4_K_M"]["size_gb"] == 5
         assert files["BF16"]["size_gb"] == 16 and files["BF16"]["parts"] == 2
+        assert files["BF16"]["file_path"] == "BF16/m-BF16-00001-of-00002.gguf"
+        assert files["Q4_K_M"]["file_path"] == "m-Q4_K_M.gguf" and files["Q4_K_M"]["parts"] == 1
         assert files["Q8_0"]["file_name"] == "m-noMTP-Q8_0.gguf"
 
     def test_candidate_uses_gguf_metadata(self):

@@ -567,6 +567,8 @@ def analyze_file(model, gguf_file, hardware, use_case=GENERAL):
     return {
         "quant": quant,
         "file_name": gguf_file.get("file_name"),
+        "file_path": gguf_file.get("file_path"),
+        "file_parts": gguf_file.get("parts", 1),
         "file_size_gb": round(weights_gb, 2),
         "vram_needed": round(mem_used, 2),
         "memory_required_gb": round(mem_required, 2),

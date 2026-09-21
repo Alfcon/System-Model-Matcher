@@ -5,6 +5,7 @@ import threading
 import webbrowser
 
 from fit_engine import USE_CASES, GENERAL
+from app_integrator import ollama_run_command, llama_cpp_run_command
 
 BACKEND_LABELS = {
     "cuda": "CUDA (NVIDIA)", "rocm": "ROCm (AMD)", "vulkan": "Vulkan", "metal": "Metal (Apple)",
@@ -344,6 +345,14 @@ class ResultsScreen(Screen):
         copy_btn = tk.Button(button_frame, text="Copy to Clipboard", command=self._copy_to_clipboard)
         copy_btn.pack(side=tk.LEFT, padx=5)
 
+        self.ollama_btn = tk.Button(button_frame, text="Copy Ollama Command", state=tk.DISABLED,
+                                    command=lambda: self._copy_run_command("Ollama", ollama_run_command))
+        self.ollama_btn.pack(side=tk.LEFT, padx=5)
+
+        self.llama_cpp_btn = tk.Button(button_frame, text="Copy llama.cpp Command", state=tk.DISABLED,
+                                       command=lambda: self._copy_run_command("llama.cpp", llama_cpp_run_command))
+        self.llama_cpp_btn.pack(side=tk.LEFT, padx=5)
+
         open_btn = tk.Button(button_frame, text="Open on Hugging Face", command=self._open_model_page)
         open_btn.pack(side=tk.LEFT, padx=5)
 
@@ -387,6 +396,10 @@ class ResultsScreen(Screen):
     def _populate(self, models):
         self.tree.delete(*self.tree.get_children())
         self._row_models = {}
+        # Rebuilding the table clears the selection, so there is nothing to copy yet.
+        for button in (getattr(self, "ollama_btn", None), getattr(self, "llama_cpp_btn", None)):
+            if button is not None:
+                button.config(state=tk.DISABLED)
         for model in models:
             item = self.tree.insert('', 'end', values=self._row_values(model), tags=(model.get("fit_level", ""),))
             self._row_models[item] = model
@@ -413,6 +426,8 @@ class ResultsScreen(Screen):
         model = self._selected_model()
         if not model:
             return
+        self.ollama_btn.config(state=tk.NORMAL)
+        self.llama_cpp_btn.config(state=tk.NORMAL)
         details = [
             f"{model.get('model_name')}  /  {model.get('file_name', model.get('quant'))}",
             f"Scores: quality {model.get('quality_score')}, speed {model.get('speed_score')}, "
@@ -426,6 +441,19 @@ class ResultsScreen(Screen):
             details.append("Mixture-of-Experts" + (f", ~{active}B active per token" if active else ""))
         details.extend(model.get("notes", []))
         self.details_var.set("\n".join(details))
+
+    def _copy_run_command(self, app_label, build_command):
+        """Copy the command that downloads and runs the selected model in an inference app."""
+        model = self._selected_model()
+        if not model:
+            return
+        command, note = build_command(model)
+        self.frame.clipboard_clear()
+        self.frame.clipboard_append(command)
+        message = f"Copied to clipboard. Paste it into a terminal:\n\n{command}"
+        if note:
+            message += f"\n\nNote: {note}"
+        messagebox.showinfo(f"{app_label} Command", message)
 
     def _open_model_page(self, event=None):
         model = self._selected_model()

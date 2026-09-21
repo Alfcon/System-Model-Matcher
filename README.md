@@ -74,6 +74,9 @@ Follow these steps to set up the project using Miniconda.
   Quality combines parameter count, model family, recency, quantization loss and a per-family task benchmark table (coding / reasoning / chat)
 - **One Result per Model**: re-uploads of the same model by different quantizers (bartowski, unsloth, lmstudio-community, ...) are collapsed to the best-scoring one
 - **Results Table**: rank, model, parameters, quant, file size, memory needed, fit, run mode, estimated speed, context length and score; click a heading to sort, select a row for the score breakdown and notes, double-click to open the model on Hugging Face
+- **Copy Run Command**: select a model and copy a ready-to-paste command that downloads and runs the recommended file:
+  - **Ollama** — `ollama run hf.co/<repo>:<quant>`
+  - **llama.cpp** — `llama-cli --hf-repo <repo> --hf-file <file> -c 8192 -ngl 99`, with GPU offload flags matched to the run mode (`--cpu-moe` for MoE offload, a partial `-ngl` for CPU+GPU, `-ngl 0` for CPU)
 - **Copy to Clipboard**: Export the results table as tab-separated text
 
 The fit, speed and scoring model is a Python port of [llmfit](https://github.com/AlexsJones/llmfit) (MIT License), adapted to use real GGUF file sizes from Hugging Face.

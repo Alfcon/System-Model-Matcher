@@ -141,3 +141,57 @@ If you need help:
 - {app_name} Documentation: https://docs.ollama.ai (or equivalent)
 """
     return instructions
+
+
+# ── Run commands ───────────────────────────────────────────────────────────
+
+LLAMA_CPP_CONTEXT = 8192  # Matches the context the memory estimate assumed
+
+
+def ollama_run_command(model):
+    """
+    Command to pull and chat with a Hugging Face GGUF model in Ollama.
+    Returns (command, note); note is None unless there is a caveat.
+    """
+    repo = model["model_name"]
+    quant = model.get("quant")
+    command = f"ollama run hf.co/{repo}:{quant}" if quant else f"ollama run hf.co/{repo}"
+    note = None
+    if (model.get("file_parts") or 1) > 1:
+        note = ("This quant is split into several files, which Ollama cannot pull from Hugging Face. "
+                "Use the llama.cpp command instead.")
+    return command, note
+
+
+def llama_cpp_run_command(model):
+    """
+    Command to download and chat with a Hugging Face GGUF model in llama.cpp,
+    with GPU offload flags matching the recommended run mode.
+    Returns (command, note); note is None unless there is a caveat.
+    """
+    repo = model["model_name"]
+    quant = model.get("quant")
+    file_path = model.get("file_path")
+    if file_path and (model.get("file_parts") or 1) == 1:
+        # Exact file, so repos with several files of the same quant stay unambiguous.
+        source = f"--hf-repo {repo} --hf-file {file_path}"
+    else:
+        # llama.cpp resolves the quant tag and downloads every shard of a split file.
+        source = f"-hf {repo}:{quant}" if quant else f"-hf {repo}"
+
+    run_mode = model.get("run_mode")
+    note = None
+    if run_mode == "CPU":
+        gpu_flags = "-ngl 0"
+    elif run_mode == "MoE offload":
+        gpu_flags = "-ngl 99 --cpu-moe"
+        note = "--cpu-moe keeps the expert weights in system RAM and everything else on the GPU."
+    elif run_mode == "CPU+GPU":
+        gpu_flags = "-ngl 20"
+        note = ("The model is larger than your VRAM: -ngl sets how many layers go on the GPU. "
+                "Raise it until VRAM is nearly full, or lower it if loading fails.")
+    else:
+        gpu_flags = "-ngl 99"
+
+    command = f"llama-cli {source} -c {LLAMA_CPP_CONTEXT} {gpu_flags}"
+    return command, note
