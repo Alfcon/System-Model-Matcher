@@ -138,9 +138,29 @@ class TestScoring(unittest.TestCase):
 
     def test_weighted_score_uses_use_case_weights(self):
         # Reasoning weights quality higher than Chat, Chat weights speed higher
-        assert fe.weighted_score(100, 0, 0, 0, fe.REASONING) > fe.weighted_score(100, 0, 0, 0, fe.CHAT)
-        assert fe.weighted_score(0, 100, 0, 0, fe.CHAT) > fe.weighted_score(0, 100, 0, 0, fe.REASONING)
-        assert fe.weighted_score(0, 100, 0, 0, fe.ROLEPLAY) == fe.weighted_score(0, 100, 0, 0, fe.CHAT)
+        assert fe.weighted_score(100, 0, 0, 0, 0, fe.REASONING) > fe.weighted_score(100, 0, 0, 0, 0, fe.CHAT)
+        assert fe.weighted_score(0, 100, 0, 0, 0, fe.CHAT) > fe.weighted_score(0, 100, 0, 0, 0, fe.REASONING)
+        assert fe.weighted_score(0, 100, 0, 0, 0, fe.ROLEPLAY) == fe.weighted_score(0, 100, 0, 0, 0, fe.CHAT)
+
+    def test_popularity_is_ten_percent_of_score(self):
+        assert fe.weighted_score(100, 100, 100, 100, 100, fe.GENERAL) == 100.0
+        assert fe.weighted_score(100, 100, 100, 100, 0, fe.GENERAL) == 90.0
+        assert fe.weighted_score(0, 0, 0, 0, 100, fe.CODING) == 10.0
+
+    def test_popularity_score_is_log_scaled(self):
+        assert fe.popularity_score(0, 0) == 0.0
+        assert fe.popularity_score(10_000_000, 3162) > 99.9
+        small = fe.popularity_score(1_000, 10)
+        medium = fe.popularity_score(100_000, 100)
+        assert 0 < small < medium < 100
+        # 100x the downloads is a fixed step, not 100x the score
+        assert abs((medium - small) - (fe.popularity_score(10_000_000, 1000) - medium)) < 1e-9
+
+    def test_popular_upload_outranks_identical_obscure_one(self):
+        files = [{"quant": "Q4_K_M", "size_gb": 4.6}]
+        popular = fe.best_file_for_model({**_model(), "downloads": 5_000_000, "likes": 2000}, files, _hardware())
+        obscure = fe.best_file_for_model({**_model(), "downloads": 50, "likes": 0}, files, _hardware())
+        assert popular["final_score"] > obscure["final_score"]
 
 
 class TestBestFile(unittest.TestCase):

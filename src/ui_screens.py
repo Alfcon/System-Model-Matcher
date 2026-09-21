@@ -431,7 +431,9 @@ class ResultsScreen(Screen):
         details = [
             f"{model.get('model_name')}  /  {model.get('file_name', model.get('quant'))}",
             f"Scores: quality {model.get('quality_score')}, speed {model.get('speed_score')}, "
-            f"fit {model.get('fit_score')}, context {model.get('context_score')}",
+            f"fit {model.get('fit_score')}, context {model.get('context_score')}, "
+            f"popularity {model.get('popularity_score')} "
+            f"({model.get('downloads', 0):,} downloads last 30 days, {model.get('likes', 0):,} likes)",
         ]
         if model.get("utilization_pct") is not None:
             details.append(f"Uses {model['utilization_pct']}% of {model.get('memory_available_gb')} GB "

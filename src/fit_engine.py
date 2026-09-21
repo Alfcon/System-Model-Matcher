@@ -11,7 +11,8 @@ Pipeline for a single GGUF file:
   2. run mode         = GPU / MoE offload / CPU+GPU / CPU, whichever pool it fits
   3. fit level        = Perfect / Good / Marginal / Too Tight from pool utilization
   4. est. tokens/sec  = memory-bandwidth roofline, or per-backend constant fallback
-  5. composite score  = Quality, Speed, Fit, Context weighted per use case
+  5. composite score  = Quality, Speed, Fit, Context weighted per use case,
+                        plus a fixed share for Hugging Face popularity
 """
 import json
 import math
@@ -525,9 +526,33 @@ def context_score(context_length, use_case):
     return 30.0
 
 
-def weighted_score(quality, speed, fit, context, use_case):
+# Share of the composite score given to popularity; the use-case weights
+# are scaled to fill the rest, keeping their proportions.
+POPULARITY_WEIGHT = 0.10
+
+# Log-scale ranges mapped onto 0-100 (Hub downloads cover the last 30 days).
+_DOWNLOADS_LOG_RANGE = (2.0, 7.0)  # 100 downloads -> 0, 10M -> 100
+_LIKES_LOG_RANGE = (0.0, 3.5)  # 1 like -> 0, ~3,000 likes -> 100
+
+
+def _log_scale(value, low, high):
+    if not value or value <= 0:
+        return 0.0
+    return max(0.0, min(100.0, (math.log10(value) - low) / (high - low) * 100.0))
+
+
+def popularity_score(downloads, likes):
+    """
+    How widely used a repo is: the average of log-scaled downloads and likes.
+    Log scale because both span tens to tens of millions.
+    """
+    return (_log_scale(downloads, *_DOWNLOADS_LOG_RANGE) + _log_scale(likes, *_LIKES_LOG_RANGE)) / 2
+
+
+def weighted_score(quality, speed, fit, context, popularity, use_case):
     wq, ws, wf, wc = SCORING_WEIGHTS[scoring_category(use_case)]
-    return round(quality * wq + speed * ws + fit * wf + context * wc, 1)
+    hardware_fit = quality * wq + speed * ws + fit * wf + context * wc
+    return round(hardware_fit * (1 - POPULARITY_WEIGHT) + popularity * POPULARITY_WEIGHT, 1)
 
 
 # ── Whole-file analysis ────────────────────────────────────────────────────
@@ -559,7 +584,8 @@ def analyze_file(model, gguf_file, hardware, use_case=GENERAL):
     speed = speed_score(tps, use_case)
     fit = fit_score(mem_used, mem_available)
     context = context_score(context_length, use_case)
-    score = weighted_score(quality, speed, fit, context, use_case) if level != TOO_TIGHT else 0.0
+    popularity = popularity_score(model.get("downloads"), model.get("likes"))
+    score = weighted_score(quality, speed, fit, context, popularity, use_case) if level != TOO_TIGHT else 0.0
 
     if ctx < context_length:
         notes.append("KV cache estimated at %d tokens (model supports %d)" % (ctx, context_length))
@@ -583,6 +609,7 @@ def analyze_file(model, gguf_file, hardware, use_case=GENERAL):
         "speed_score": round(speed, 1),
         "fit_score": round(fit, 1),
         "context_score": round(context, 1),
+        "popularity_score": round(popularity, 1),
         "final_score": score,
         "notes": notes,
     }

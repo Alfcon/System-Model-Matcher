@@ -61,17 +61,17 @@ Follow these steps to set up the project using Miniconda.
 - **Fit Levels**: by how full the memory pool is — **Perfect** (≤60%, GPU only), **Good** (≤85%), **Marginal** (≤98%); anything tighter is dropped
 - **Mixture-of-Experts Aware**: MoE models (e.g. `30B-A3B`) that don't fit in VRAM can keep active experts on the GPU and inactive experts in RAM; speed and quality use the *active* parameter count
 - **Speed Estimate**: token generation is memory-bandwidth-bound, so tokens/sec ≈ GPU bandwidth ÷ model size × 0.55 for known NVIDIA, AMD and Apple Silicon GPUs, with per-backend constants for others (and for laptop GPUs, whose memory bus differs from the desktop card)
-- **Use-Case-Aware Ranking**: Each model is scored 0–100 on four dimensions, weighted by use case:
+- **Use-Case-Aware Ranking**: Each model is scored 0–100 on five dimensions. Popularity is a fixed 10%; the other four share the remaining 90%, weighted by use case:
 
-  | Use case | Quality | Speed | Fit | Context |
-  |---|---|---|---|---|
-  | General | 45% | 30% | 15% | 10% |
-  | Chat, Roleplay / Creative | 40% | 35% | 15% | 10% |
-  | Coding | 50% | 20% | 15% | 15% |
-  | Reasoning | 55% | 15% | 15% | 15% |
-  | Multimodal | 50% | 20% | 15% | 15% |
+  | Use case | Quality | Speed | Fit | Context | Popularity |
+  |---|---|---|---|---|---|
+  | General | 40.5% | 27% | 13.5% | 9% | 10% |
+  | Chat, Roleplay / Creative | 36% | 31.5% | 13.5% | 9% | 10% |
+  | Coding | 45% | 18% | 13.5% | 13.5% | 10% |
+  | Reasoning | 49.5% | 13.5% | 13.5% | 13.5% | 10% |
+  | Multimodal | 45% | 18% | 13.5% | 13.5% | 10% |
 
-  Quality combines parameter count, model family, recency, quantization loss and a per-family task benchmark table (coding / reasoning / chat)
+  Quality combines parameter count, model family, recency, quantization loss and a per-family task benchmark table (coding / reasoning / chat). Popularity averages log-scaled Hugging Face downloads (last 30 days; 100 → 0, 10M → 100) and likes (1 → 0, ~3,000 → 100)
 - **One Result per Model**: re-uploads of the same model by different quantizers (bartowski, unsloth, lmstudio-community, ...) are collapsed to the best-scoring one
 - **Results Table**: rank, model, parameters, quant, file size, memory needed, fit, run mode, estimated speed, context length and score; click a heading to sort, select a row for the score breakdown and notes, double-click to open the model on Hugging Face
 - **Copy Run Command**: select a model and copy a ready-to-paste command that downloads and runs the recommended file:

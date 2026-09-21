@@ -309,6 +309,7 @@ def _score_without_files(model, hardware, use_case):
     size_gb = model.get("file_size_gb") or params_b * QUANT_VRAM_MULTIPLIER.get(quant, 0.58)
     base = {"model_name": model.get("model_name", "unknown"), "params_b": params_b,
             "context_length": model.get("context_length"), "architecture": model.get("architecture"),
-            "created_at": model.get("created_at"), "pipeline_tag": model.get("pipeline_tag")}
+            "created_at": model.get("created_at"), "pipeline_tag": model.get("pipeline_tag"),
+            "downloads": model.get("downloads"), "likes": model.get("likes")}
     result = fit_engine.analyze_file(base, {"quant": quant, "size_gb": size_gb}, hardware, use_case)
     return {**model, **result}
