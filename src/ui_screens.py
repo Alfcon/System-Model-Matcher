@@ -2,6 +2,14 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
+import webbrowser
+
+from fit_engine import USE_CASES, GENERAL
+
+BACKEND_LABELS = {
+    "cuda": "CUDA (NVIDIA)", "rocm": "ROCm (AMD)", "vulkan": "Vulkan", "metal": "Metal (Apple)",
+    "sycl": "SYCL (Intel)", "cpu_x86": "CPU (x86)", "cpu_arm": "CPU (ARM)",
+}
 
 class Screen:
     """Base screen class."""
@@ -61,6 +69,10 @@ class HardwareScreen(Screen):
     def _detect_hardware(self):
         hw = self.hardware_detector.detect_all()
         self.session_state["hardware"] = hw
+        # Tkinter is not thread-safe: hand the result back to the main loop.
+        self.frame.after(0, self._on_detection_complete, hw)
+
+    def _on_detection_complete(self, hw):
         self._display_hardware(hw)
         self.detection_complete = True
         self.next_btn.config(state=tk.NORMAL)
@@ -74,7 +86,9 @@ class HardwareScreen(Screen):
         cpu_frame = tk.LabelFrame(self.info_frame, text="Processor", padx=10, pady=10)
         cpu_frame.pack(fill=tk.X, padx=10, pady=5)
         tk.Label(cpu_frame, text=f"Model: {hw['cpu']['model']}").pack(anchor=tk.W)
-        tk.Label(cpu_frame, text=f"Cores: {hw['cpu']['cores']}").pack(anchor=tk.W)
+        threads = hw['cpu'].get('threads')
+        cores_text = f"Cores: {hw['cpu']['cores']}" + (f" ({threads} threads)" if threads else "")
+        tk.Label(cpu_frame, text=cores_text).pack(anchor=tk.W)
 
         # RAM
         ram_frame = tk.LabelFrame(self.info_frame, text="Memory", padx=10, pady=10)
@@ -86,9 +100,18 @@ class HardwareScreen(Screen):
         gpu_frame = tk.LabelFrame(self.info_frame, text="Video Card", padx=10, pady=10)
         gpu_frame.pack(fill=tk.X, padx=10, pady=5)
         tk.Label(gpu_frame, text=f"Model: {hw['gpu']['model']}").pack(anchor=tk.W)
-        tk.Label(gpu_frame, text=f"VRAM: {hw['gpu']['vram_gb']} GB").pack(anchor=tk.W)
-        if 'vram_free_gb' in hw['gpu'] and hw['gpu']['vram_free_gb'] > 0:
-            tk.Label(gpu_frame, text=f"Free VRAM: {hw['gpu']['vram_free_gb']} GB").pack(anchor=tk.W)
+        if hw['gpu'].get('unified_memory'):
+            tk.Label(gpu_frame, text=f"Unified memory: {hw['gpu']['vram_gb']} GB (shared with CPU)").pack(anchor=tk.W)
+        else:
+            tk.Label(gpu_frame, text=f"VRAM: {hw['gpu']['vram_gb']} GB").pack(anchor=tk.W)
+            if hw['gpu'].get('vram_free_gb', 0) > 0:
+                tk.Label(gpu_frame, text=f"Free VRAM: {hw['gpu']['vram_free_gb']} GB").pack(anchor=tk.W)
+        backend = hw['gpu'].get('backend')
+        if backend:
+            tk.Label(gpu_frame, text=f"Backend: {BACKEND_LABELS.get(backend, backend)}").pack(anchor=tk.W)
+        if not hw['gpu'].get('vram_gb'):
+            tk.Label(gpu_frame, text="No usable VRAM detected: models will be sized against system RAM.",
+                     fg="gray").pack(anchor=tk.W)
 
         self.status_label.config(text="✓ Hardware detection complete")
 
@@ -112,6 +135,14 @@ class PreferencesScreen(Screen):
         self.app_combo = ttk.Combobox(self.frame, textvariable=self.app_var,
                                        values=self.dropdowns_data['apps'], state='readonly', width=40)
         self.app_combo.pack(pady=5)
+
+        # Use case dropdown (drives scoring weights and extra search keywords)
+        use_case_label = tk.Label(self.frame, text="What will you use it for?", font=("Arial", 10))
+        use_case_label.pack(pady=5)
+        self.use_case_var = tk.StringVar(value=GENERAL)
+        self.use_case_combo = ttk.Combobox(self.frame, textvariable=self.use_case_var,
+                                           values=USE_CASES, state='readonly', width=40)
+        self.use_case_combo.pack(pady=5)
 
         # Search parameter field
         search_label = tk.Label(self.frame, text="Search parameter (optional):", font=("Arial", 10))
@@ -211,12 +242,15 @@ class PreferencesScreen(Screen):
         """Hide the models list display."""
         self.models_frame.pack_forget()
 
+    def set_progress_text(self, text):
+        """Update the status line under the progress bar."""
+        self.progress_label.config(text=text)
+
     def add_model_to_list(self, model_name):
         """Add a model name to the models list display."""
         self.models_text.config(state=tk.NORMAL)
-        self.models_text.insert(tk.END, f"• {model_name}\n")
+        self.models_text.insert(tk.END, f"- {model_name}\n")
         self.models_text.see(tk.END)  # Auto-scroll to bottom
-        self.models_text.update()  # Refresh display
         self.models_text.config(state=tk.DISABLED)
 
     def clear_models_list(self):
@@ -229,48 +263,79 @@ class PreferencesScreen(Screen):
         search_param = self.search_var.get().strip()
         self.session_state["preferences"] = {
             "app": self.app_var.get(),
+            "use_case": self.use_case_var.get() or GENERAL,
             "search_param": search_param if search_param else ""
         }
         self.generate_btn.config(state=tk.DISABLED)
+        self.set_progress_text("Searching Hugging Face for GGUF models...")
         self._show_progress_bar()
         self._show_models_list()
         self.clear_models_list()
         self.on_next()
 
+def _format_context(tokens):
+    if not tokens:
+        return "?"
+    return f"{tokens // 1024}k" if tokens >= 1024 else str(tokens)
+
+
 class ResultsScreen(Screen):
-    """Screen 4: Display top 10 models with download/integrate options."""
+    """Screen 4: Display top 10 models ranked for this hardware."""
+    COLUMNS = ("Rank", "Model Name", "Params (B)", "Quant", "File Size", "Memory", "Fit",
+               "Run Mode", "Est. Speed", "Context", "Score")
+    COLUMN_WIDTHS = {"Rank": 45, "Model Name": 330, "Params (B)": 75, "Quant": 90, "File Size": 75,
+                     "Memory": 75, "Fit": 70, "Run Mode": 90, "Est. Speed": 80, "Context": 60, "Score": 55}
+    # Numeric sort keys for columns whose display text is not directly sortable.
+    SORT_KEYS = {
+        "Rank": lambda m: m["_rank"],
+        "Params (B)": lambda m: m.get("params_b") or 0,
+        "File Size": lambda m: m.get("file_size_gb") or 0,
+        "Memory": lambda m: m.get("vram_needed") or 0,
+        "Fit": lambda m: {"Perfect": 3, "Good": 2, "Marginal": 1}.get(m.get("fit_level"), 0),
+        "Est. Speed": lambda m: m.get("est_tokens_per_sec") or 0,
+        "Context": lambda m: m.get("context_length") or 0,
+        "Score": lambda m: m.get("final_score") or 0,
+    }
+
     def __init__(self, parent, session_state, on_new_search, on_back, model_data):
         super().__init__(parent, session_state)
         self.on_new_search = on_new_search
         self.on_back = on_back
-        self.model_data = model_data  # List of top 10 models
+        self.model_data = model_data[:10]  # List of top 10 models
+        for idx, model in enumerate(self.model_data, 1):
+            model["_rank"] = idx
+        self._sort_state = {}
         self._build_ui()
 
     def _build_ui(self):
         title = tk.Label(self.frame, text="Top 10 Models", font=("Arial", 14, "bold"))
-        title.pack(pady=10)
+        title.pack(pady=(10, 2))
 
-        # Create treeview for models
-        columns = ("Rank", "Model Name", "Parameters / Billion", "Quant", "File Size", "Est. VRAM", "Est. Speed")
-        self.tree = ttk.Treeview(self.frame, columns=columns, height=12, show='headings')
+        summary = self._hardware_summary()
+        if summary:
+            tk.Label(self.frame, text=summary, font=("Arial", 9), fg="gray").pack()
 
-        for col in columns:
-            self.tree.column(col, width=100)
-            self.tree.heading(col, text=col)
+        table_frame = tk.Frame(self.frame)
+        table_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.tree = ttk.Treeview(table_frame, columns=self.COLUMNS, height=12, show='headings')
+        for col in self.COLUMNS:
+            anchor = tk.W if col == "Model Name" else tk.CENTER
+            self.tree.column(col, width=self.COLUMN_WIDTHS[col], anchor=anchor, stretch=(col == "Model Name"))
+            self.tree.heading(col, text=col, command=lambda c=col: self._sort_by(c))
+        xscroll = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
+        self.tree.configure(xscrollcommand=xscroll.set)
+        self.tree.pack(fill=tk.BOTH, expand=True)
+        xscroll.pack(fill=tk.X)
 
-        self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.tree.tag_configure("Perfect", foreground="#1b7f3a")
+        self.tree.tag_configure("Marginal", foreground="#a15c00")
+        self._populate(self.model_data)
+        self.tree.bind("<<TreeviewSelect>>", self._on_select)
+        self.tree.bind("<Double-1>", self._open_model_page)
 
-        # Populate with data
-        for idx, model in enumerate(self.model_data[:10], 1):
-            self.tree.insert('', 'end', values=(
-                idx,
-                model.get('model_name', 'Unknown'),  # Do not truncate names
-                model.get('params_b', '?'),
-                model.get('quant', '?'),
-                f"{model.get('file_size_gb', '?')} GB",
-                f"{model.get('vram_needed', '?')} GB",
-                f"{model.get('est_tokens_per_sec', '?')} t/s"
-            ))
+        self.details_var = tk.StringVar(value="Select a model for details. Double-click to open it on Hugging Face.")
+        tk.Label(self.frame, textvariable=self.details_var, font=("Arial", 9), justify=tk.LEFT,
+                 anchor=tk.W, wraplength=1000).pack(fill=tk.X, padx=12)
 
         # Buttons
         button_frame = tk.Frame(self.frame)
@@ -279,15 +344,97 @@ class ResultsScreen(Screen):
         copy_btn = tk.Button(button_frame, text="Copy to Clipboard", command=self._copy_to_clipboard)
         copy_btn.pack(side=tk.LEFT, padx=5)
 
+        open_btn = tk.Button(button_frame, text="Open on Hugging Face", command=self._open_model_page)
+        open_btn.pack(side=tk.LEFT, padx=5)
+
         back_btn = tk.Button(button_frame, text="Back", command=self.on_back)
         back_btn.pack(side=tk.LEFT, padx=5)
 
         new_search_btn = tk.Button(button_frame, text="New Search", command=self.on_new_search)
         new_search_btn.pack(side=tk.LEFT, padx=5)
 
+    def _hardware_summary(self):
+        hw = self.session_state.get("hardware") or {}
+        prefs = self.session_state.get("preferences") or {}
+        gpu, ram = hw.get("gpu", {}), hw.get("ram", {})
+        parts = []
+        if gpu.get("vram_gb"):
+            parts.append(f"{gpu.get('model')} ({gpu['vram_gb']} GB)")
+        else:
+            parts.append("CPU only")
+        if ram:
+            parts.append(f"{ram.get('available_gb')} of {ram.get('total_gb')} GB RAM free")
+        if prefs.get("use_case"):
+            parts.append(f"Use case: {prefs['use_case']}")
+        return "  |  ".join(parts)
+
+    @staticmethod
+    def _row_values(model):
+        return (
+            model["_rank"],
+            model.get('model_name', 'Unknown'),  # Do not truncate names
+            model.get('params_b', '?'),
+            model.get('quant', '?'),
+            f"{model.get('file_size_gb', '?')} GB",
+            f"{model.get('vram_needed', '?')} GB",
+            model.get('fit_level', '?'),
+            model.get('run_mode', '?'),
+            f"{model.get('est_tokens_per_sec', '?')} t/s",
+            _format_context(model.get('context_length')),
+            model.get('final_score', '?'),
+        )
+
+    def _populate(self, models):
+        self.tree.delete(*self.tree.get_children())
+        self._row_models = {}
+        for model in models:
+            item = self.tree.insert('', 'end', values=self._row_values(model), tags=(model.get("fit_level", ""),))
+            self._row_models[item] = model
+
+    def _sort_by(self, column):
+        if column in self._sort_state:
+            descending = not self._sort_state[column]
+        else:
+            # Numbers read best high-to-low; rank and text columns start ascending.
+            descending = column not in ("Rank", "Model Name", "Quant", "Run Mode")
+        self._sort_state = {column: descending}
+        if column in self.SORT_KEYS:
+            key = self.SORT_KEYS[column]
+        else:
+            index = self.COLUMNS.index(column)
+            key = lambda m: str(self._row_values(m)[index]).lower()
+        self._populate(sorted(self.model_data, key=key, reverse=descending))
+
+    def _selected_model(self):
+        selection = self.tree.selection()
+        return self._row_models.get(selection[0]) if selection else None
+
+    def _on_select(self, event=None):
+        model = self._selected_model()
+        if not model:
+            return
+        details = [
+            f"{model.get('model_name')}  /  {model.get('file_name', model.get('quant'))}",
+            f"Scores: quality {model.get('quality_score')}, speed {model.get('speed_score')}, "
+            f"fit {model.get('fit_score')}, context {model.get('context_score')}",
+        ]
+        if model.get("utilization_pct") is not None:
+            details.append(f"Uses {model['utilization_pct']}% of {model.get('memory_available_gb')} GB "
+                           f"({model.get('run_mode')} pool)")
+        if model.get("is_moe"):
+            active = model.get("active_params_b")
+            details.append("Mixture-of-Experts" + (f", ~{active}B active per token" if active else ""))
+        details.extend(model.get("notes", []))
+        self.details_var.set("\n".join(details))
+
+    def _open_model_page(self, event=None):
+        model = self._selected_model()
+        if model:
+            webbrowser.open(f"https://huggingface.co/{model['model_name']}")
+
     def _copy_to_clipboard(self):
         # Extract data from tree and copy
-        text = "Rank\tModel Name\tParameters / Billion\tQuant\tFile Size\tEst. VRAM\tEst. Speed\n"
+        text = "\t".join(self.COLUMNS) + "\n"
         for item in self.tree.get_children():
             values = self.tree.item(item)['values']
             text += "\t".join(str(v) for v in values) + "\n"

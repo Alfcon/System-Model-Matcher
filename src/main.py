@@ -8,16 +8,17 @@ import os
 # Add src to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from hardware_detector import detect_all
 from hf_scraper import get_tasks, get_apps, get_themes
-from model_finder import search_gguf_models, rank_models
+from model_finder import gather_candidates, evaluate_candidates, rank_models
+from fit_engine import GENERAL
+import hardware_detector
 from ui_screens import HardwareScreen, PreferencesScreen, ResultsScreen
 
 class LLMModelFinderApp:
     def __init__(self, root):
         self.root = root
         self.root.title("LLM Model Finder")
-        self.root.geometry("700x600")
+        self.root.geometry("1200x720")
 
         # Session state
         self.state = {
@@ -71,7 +72,7 @@ class LLMModelFinderApp:
             self.root, self.state,
             on_next=lambda: self._show_screen(1),
             on_back=lambda: self.root.quit(),
-            hardware_detector=sys.modules[__name__]
+            hardware_detector=hardware_detector
         )
         self.screens.append(hw_screen)
 
@@ -106,6 +107,7 @@ class LLMModelFinderApp:
         self.screens[1].clear_models_list()
         self.screens[1].app_var.set('')
         self.screens[1].search_var.set('')
+        self.screens[1].use_case_var.set(GENERAL)
         self._show_screen(1)  # Return to preferences
 
     def _on_preferences_complete(self):
@@ -115,88 +117,77 @@ class LLMModelFinderApp:
         thread.daemon = True
         thread.start()
 
-    def _search_and_rank_models(self):
-        """Search HuggingFace for GGUF models based on user parameter or best general models."""
-        try:
-            gpu_info = self.state["hardware"]["gpu"]
-            vram_gb = gpu_info["vram_gb"]
-            search_param = self.state["preferences"].get("search_param", "")
-            selected_app = self.state["preferences"].get("app", "")
+    def _ui(self, func, *args):
+        """Run func on the Tk main loop; Tkinter widgets must not be touched from worker threads."""
+        self.root.after(0, func, *args)
 
-            # Get the preferences screen to update model list
+    def _search_and_rank_models(self):
+        """Search HuggingFace for GGUF models and rank them for this hardware (worker thread)."""
+        try:
+            hardware = self.state["hardware"]
+            preferences = self.state["preferences"]
+            search_param = preferences.get("search_param", "")
+            use_case = preferences.get("use_case", GENERAL)
             prefs_screen = self.screens[1]
 
-            # Empty search → no keyword filter, return top downloaded GGUF models
-            search_query = search_param
-            task = "text-generation"
-
-            # Search for GGUF models
-            all_models = []
-
-            # Primary search: Top 30 downloaded and Top 30 most likes
-            models_dl = search_gguf_models(task=search_query, limit=30, sort="downloads", user_vram_gb=vram_gb)
-            models_likes = search_gguf_models(task=search_query, limit=30, sort="likes", user_vram_gb=vram_gb)
-            all_models.extend(models_dl)
-            all_models.extend(models_likes)
-
-            # Remove duplicates by model name
-            seen = set()
-            unique_models = []
-            for model in all_models:
-                name = model.get("model_name", "")
-                if name not in seen:
-                    seen.add(name)
-                    unique_models.append(model)
-
-            if not unique_models:
-                messagebox.showwarning("No Results", "No models found. Try a different search parameter.")
-                prefs_screen.generate_btn.config(state=tk.NORMAL)
-                prefs_screen._hide_progress_bar()
-                prefs_screen._hide_models_list()
+            # Top downloaded + most liked GGUF repos (plus a use-case keyword pass
+            # when no search keyword was given), de-duplicated.
+            candidates = gather_candidates(search_param, use_case)
+            if not candidates:
+                self._ui(self._search_failed, "No Results", "No models found. Try a different search parameter.")
                 return
 
-            # Rank models by suitability for user's hardware
-            ranked = rank_models(unique_models, vram_gb, task=task, app_name=selected_app)
+            self._ui(prefs_screen.set_progress_text, f"Checking {len(candidates)} models against your hardware...")
 
-            # Display only models that fit the GPU VRAM budget
-            for model in ranked:
-                model_name = model.get("model_name", "Unknown")
-                prefs_screen.add_model_to_list(model_name)
+            def on_progress(done, total, result):
+                self._ui(prefs_screen.set_progress_text, f"Checked {done}/{total} models...")
+                if result is not None:
+                    line = f"{result['model_name']}  ({result['quant']}, {result['fit_level']}, {result['run_mode']})"
+                    self._ui(prefs_screen.add_model_to_list, line)
 
-            # Add estimated speed
-            for model in ranked:
-                vram = model.get('vram_needed', 6)
-                params = model.get('params_b', 7)
-                model['est_tokens_per_sec'] = round((vram * 10) / params, 1)
+            evaluated = evaluate_candidates(candidates, hardware, use_case, progress_callback=on_progress)
+            ranked = rank_models(evaluated, use_case=use_case, hardware=hardware)
+            if not ranked:
+                self._ui(self._search_failed, "No Results",
+                         "None of the models found fit your hardware. Try a different search parameter.")
+                return
 
             self.state["results"] = ranked
-
-            # Hide progress and models list
-            prefs_screen._hide_progress_bar()
-            prefs_screen._hide_models_list()
-
-            # Create and show results screen
-            results_screen = ResultsScreen(
-                self.root, self.state,
-                on_new_search=lambda: self._reset_and_new_search(),
-                on_back=lambda: self._show_screen(1),
-                model_data=ranked
-            )
-            
-            if len(self.screens) > 2:
-                self.screens[2].frame.destroy()
-                self.screens[2] = results_screen
-            else:
-                self.screens.append(results_screen)
-                
-            self._show_screen(2)
+            self._ui(self._show_results, ranked)
 
         except Exception as e:
-            messagebox.showerror("Error", f"Search failed: {str(e)}")
-            prefs_screen = self.screens[1]
-            prefs_screen.generate_btn.config(state=tk.NORMAL)
-            prefs_screen._hide_progress_bar()
-            prefs_screen._hide_models_list()
+            self._ui(self._search_failed, "Error", f"Search failed: {str(e)}", True)
+
+    def _search_failed(self, title, message, is_error=False):
+        prefs_screen = self.screens[1]
+        prefs_screen.generate_btn.config(state=tk.NORMAL)
+        prefs_screen._hide_progress_bar()
+        prefs_screen._hide_models_list()
+        (messagebox.showerror if is_error else messagebox.showwarning)(title, message)
+
+    def _show_results(self, ranked):
+        prefs_screen = self.screens[1]
+        prefs_screen._hide_progress_bar()
+        prefs_screen._hide_models_list()
+
+        results_screen = ResultsScreen(
+            self.root, self.state,
+            on_new_search=lambda: self._reset_and_new_search(),
+            on_back=self._back_to_preferences,
+            model_data=ranked
+        )
+
+        if len(self.screens) > 2:
+            self.screens[2].frame.destroy()
+            self.screens[2] = results_screen
+        else:
+            self.screens.append(results_screen)
+
+        self._show_screen(2)
+
+    def _back_to_preferences(self):
+        self.screens[1].generate_btn.config(state=tk.NORMAL)
+        self._show_screen(1)
 
 def main():
     root = tk.Tk()

@@ -44,24 +44,45 @@ Follow these steps to set up the project using Miniconda.
 ## App Flow
 
 1. **Hardware Detection** — automatically scans your CPU, RAM, and GPU (VRAM)
-2. **Preferences** — select your inference app and optionally enter a search keyword
-3. **Results** — top 10 ranked models displayed in a sortable table
+2. **Preferences** — select your inference app, what you'll use the model for, and optionally a search keyword
+3. **Results** — top 10 models ranked for your hardware, in a sortable table
 
 ## Features
-- **Hardware Detection**: Detects CPU model/cores, total/available RAM, and GPU (VRAM) for both NVIDIA and AMD cards. It uses `nvidia-ml-py` for NVIDIA, and `rocm-smi` (Linux) or WMI (Windows) for AMD. Falls back to 8 GB effective VRAM on CPU-only or undetected GPU systems.
-- **Smart Model Search**: Queries Hugging Face Hub for GGUF models sorted by downloads and likes (top 30 each), deduplicates, and evaluates up to 60 candidates
-- **Quantization-Aware Filtering**: Selects the highest-quality quant that fits within 80% of your VRAM; falls back to the smallest available file if none fit
-- **Hardware-Aware Ranking**: Scores each model on four weighted criteria:
-  - VRAM fit — 50%
-  - Parameter count suitability (prefers 7–13B for chat, 13B+ for other tasks) — 30%
-  - Quantization quality — 10%
-  - Popularity (downloads + likes) — 10%
-- **Results Table**: Displays rank, model name, parameter count, quant type, file size, estimated VRAM usage, and estimated inference speed (tokens/sec)
+- **Hardware Detection**: Detects CPU model, cores and threads, total/available RAM, and GPUs:
+  - **NVIDIA** — all cards via `nvidia-ml-py` (falls back to `nvidia-smi`); VRAM is summed across multiple GPUs
+  - **AMD** — `rocm-smi` or `lspci` on Linux; WMI plus the registry on Windows (WMI alone caps at 4 GB)
+  - **Apple Silicon** — unified memory, so the GPU memory pool is system RAM
+  - No GPU or unknown VRAM — models are sized against available system RAM
+- **Smart Model Search**: Queries Hugging Face Hub for GGUF models by downloads and likes (plus a use-case keyword pass such as "coder" when no keyword is given), filters out non-chat repos (embeddings, detectors, TTS), and reads each model's exact parameter count, architecture and context length from its GGUF metadata
+- **Every Quant Considered**: Lists all GGUF files in each repo (combining split files, skipping draft/MTP heads and vision projectors) and picks the one to recommend:
+  1. The fastest execution path any file can use: **GPU** → **MoE offload** → **CPU+GPU** → **CPU**
+  2. The highest-quality quant on that path, preferring one that leaves memory headroom
+- **Memory Estimate**: file size + KV cache (at an 8k-token context) + 0.5 GB runtime overhead
+- **Fit Levels**: by how full the memory pool is — **Perfect** (≤60%, GPU only), **Good** (≤85%), **Marginal** (≤98%); anything tighter is dropped
+- **Mixture-of-Experts Aware**: MoE models (e.g. `30B-A3B`) that don't fit in VRAM can keep active experts on the GPU and inactive experts in RAM; speed and quality use the *active* parameter count
+- **Speed Estimate**: token generation is memory-bandwidth-bound, so tokens/sec ≈ GPU bandwidth ÷ model size × 0.55 for known NVIDIA, AMD and Apple Silicon GPUs, with per-backend constants for others (and for laptop GPUs, whose memory bus differs from the desktop card)
+- **Use-Case-Aware Ranking**: Each model is scored 0–100 on four dimensions, weighted by use case:
+
+  | Use case | Quality | Speed | Fit | Context |
+  |---|---|---|---|---|
+  | General | 45% | 30% | 15% | 10% |
+  | Chat, Roleplay / Creative | 40% | 35% | 15% | 10% |
+  | Coding | 50% | 20% | 15% | 15% |
+  | Reasoning | 55% | 15% | 15% | 15% |
+  | Multimodal | 50% | 20% | 15% | 15% |
+
+  Quality combines parameter count, model family, recency, quantization loss and a per-family task benchmark table (coding / reasoning / chat)
+- **One Result per Model**: re-uploads of the same model by different quantizers (bartowski, unsloth, lmstudio-community, ...) are collapsed to the best-scoring one
+- **Results Table**: rank, model, parameters, quant, file size, memory needed, fit, run mode, estimated speed, context length and score; click a heading to sort, select a row for the score breakdown and notes, double-click to open the model on Hugging Face
 - **Copy to Clipboard**: Export the results table as tab-separated text
+
+The fit, speed and scoring model is a Python port of [llmfit](https://github.com/AlexsJones/llmfit) (MIT License), adapted to use real GGUF file sizes from Hugging Face.
+
+Set `HF_TOKEN` in your environment to use your Hugging Face token and avoid anonymous rate limits.
 
 ## Supported Quantization Formats
 
-Q2_K, Q3_K_S, Q3_K_M, Q3_K_L, Q4_0, Q4_K_S, Q4_K_M, Q5_K_S, Q5_K_M, Q6_K, Q8_0
+Any GGUF quant in a repo is recognized, including K-quants (Q2_K … Q6_K, with _S/_M/_L/_XL variants), legacy quants (Q4_0, Q5_1, Q8_0), i-quants (IQ1–IQ4), Unsloth dynamic quants (UD-*), MXFP4, F16 and BF16.
 
 ## Supported Inference Apps
 
@@ -75,4 +96,4 @@ Q2_K, Q3_K_S, Q3_K_M, Q3_K_L, Q4_0, Q4_K_S, Q4_K_M, Q5_K_S, Q5_K_M, Q6_K, Q8_0
 
 - Python 3.8+
 - Internet connection (for Hugging Face Hub search)
-- NVIDIA or AMD GPU recommended; CPU-only systems are supported with a conservative VRAM estimate
+- NVIDIA, AMD or Apple Silicon GPU recommended; CPU-only systems are supported (models are sized against system RAM)
